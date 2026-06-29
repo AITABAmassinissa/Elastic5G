@@ -1,4 +1,4 @@
-# OAI 5G Core NF Build Guide for Research
+# Elastic5G: A Rebuildable Kubernetes Testbed for Dynamic Network Slicing and NWDAF-Driven 5G Core Research
 
 ## Overview
 
