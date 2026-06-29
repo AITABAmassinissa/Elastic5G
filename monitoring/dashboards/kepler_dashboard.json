@@ -1,0 +1,159 @@
+{
+  "uid": "kepler-power-energy",
+  "title": "Kubernetes Power & Energy Monitoring (Kepler)",
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 8,
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "pod",
+        "type": "query",
+        "label": "Pod",
+        "datasource": { "type": "prometheus" },
+        "definition": "label_values(kepler_container_joules_total{mode=\"dynamic\"}, pod_name)",
+        "query": {
+          "query": "label_values(kepler_container_joules_total{mode=\"dynamic\"}, pod_name)",
+          "refId": "podVar"
+        },
+        "refresh": 1,
+        "includeAll": true,
+        "multi": false,
+        "current": {
+          "text": "All",
+          "value": ".*"
+        },
+        "allValue": ".*"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total Cluster Power (Watts)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kepler_node_package_joules_total[1m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 6 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Cluster Power Over Time (Watts)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kepler_node_package_joules_total[1m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 6 }
+    },
+    {
+      "type": "barchart",
+      "title": "Power by Namespace (Watts)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kepler_container_joules_total[5m])) by (container_namespace)",
+          "legendFormat": "{{container_namespace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "gridPos": { "x": 0, "y": 6, "w": 24, "h": 7 }
+    },
+    {
+      "type": "barchart",
+      "title": "Energy Consumed per Namespace (Joules)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kepler_container_joules_total{mode=\"dynamic\"}) by (container_namespace)",
+          "legendFormat": "{{container_namespace}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "joule" }
+      },
+      "gridPos": { "x": 0, "y": 13, "w": 24, "h": 7 }
+    },
+    {
+      "type": "barchart",
+      "title": "Power by Pod (Watts)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kepler_container_joules_total{pod_name=~\"$pod\"}[5m])) by (pod_name)",
+          "legendFormat": "{{pod_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "gridPos": { "x": 0, "y": 20, "w": 24, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Energy Consumed per Pod (Joules)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kepler_container_joules_total{mode=\"dynamic\", pod_name=~\"$pod\"}) by (pod_name)",
+          "legendFormat": "{{pod_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "joule" }
+      },
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 9 }
+    },
+    {
+      "type": "barchart",
+      "title": "Power by Container (Watts)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(kepler_container_joules_total{mode=\"dynamic\", pod_name=~\"$pod\"}[15m])) by (pod_name, container_name)",
+          "legendFormat": "{{pod_name}} / {{container_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "watt" }
+      },
+      "gridPos": { "x": 0, "y": 37, "w": 24, "h": 8 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Energy Consumed per Container (Joules)",
+      "datasource": { "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(kepler_container_joules_total{mode=\"dynamic\", pod_name=~\"$pod\"}) by (pod_name, container_name)",
+          "legendFormat": "{{pod_name}} / {{container_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "joule" }
+      },
+      "gridPos": { "x": 0, "y": 45, "w": 24, "h": 9 }
+    }
+  ]
+}
