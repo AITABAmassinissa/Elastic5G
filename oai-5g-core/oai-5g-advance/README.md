@@ -9,7 +9,7 @@ Advance deployment contains
 5. OAI-AUSF
 6. OAI-UDM
 7. OAI-NSSF
-8. OAI-UPF
+8. OAI UPF-VPP (`oai-upf-vpp`)
 9. MYSQL (Subscriber database)
 
 **Disclaimer**: Starting version 2.0.0 of OAI 5G Core network functions their configuration will be in `config.yaml` and `nssf_slice_config.yaml`. All infrastructure related information including image definition will be in `values.yaml`.
@@ -32,7 +32,7 @@ helm install oai-5g-advance .
 
 ## Note:
 
-1. If you want to use `oai-upf` with a single interface then you can enable any one out of three interfaces. Lets say we enable `multus.n3Interface.create`. Then change the below configuration parameters 
+1. UPF-VPP needs a dedicated N3 and N6 Multus interface (see [CHANGES-upf-vpp.md](../../docs/CHANGES-upf-vpp.md)), so the single-interface mode below does not apply to it. For reference, with a simple-switch UPF and a single interface you can enable any one out of three interfaces. Lets say we enable `multus.n3Interface.create`. Then change the below configuration parameters 
 
 ```
     n3If: "n3"   # n3 if multus.n3Interface.create is true

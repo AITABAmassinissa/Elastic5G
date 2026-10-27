@@ -91,11 +91,9 @@ spec:
           requests:
             memory: {{ .Values.resources.requests.tcpdump.memory | quote }}
             cpu: {{ .Values.resources.requests.tcpdump.cpu | quote }}
-          {{- if .Values.resources.limits.define}}
           limits:
-            memory: {{ .Values.resources.limits.nf.memory | quote }}
-            cpu: {{ .Values.resources.limits.nf.cpu | quote }}
-          {{- end}}
+            memory: {{ .Values.resources.limits.tcpdump.memory | quote }}
+            cpu: {{ .Values.resources.limits.tcpdump.cpu | quote }}
         {{- end}}
         securityContext:
           {{- toYaml .Values.securityContext | nindent 12 }}
@@ -120,63 +118,201 @@ spec:
       - name: upf
         image: "{{ .Values.nfimage.repository }}:{{ .Values.nfimage.version }}"
         imagePullPolicy: {{ .Values.nfimage.pullPolicy }}
-        volumeMounts:
-          - mountPath: /openair-upf/etc
-            name: configuration
         securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+        # oai-upf-vpp renames the pod's default interface (eth0 -> n4-1) while setting up its
+        # own dataplane, which drops the default route the CNI originally installed on eth0.
+        # Without it the container can't reach anything outside its own /24 (cluster DNS,
+        # the NRF's ClusterIP, ...), so SBI registration and PFCP toward the SMF silently
+        # fail (curl reports connection code 000). We re-add it once n4-1 exists, deriving
+        # the gateway from the pod's own IP ($POD_IP), which matches flannel's convention of
+        # giving each node's pod subnet a ".1" gateway - no hardcoded IP needed.
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # UPF-VPP forwards the user plane itself (AF_PACKET), but its N3/N6/eth0
+                # interfaces also exist in the pod's kernel, which sees the same frames and,
+                # with ip_forward=1, forwards them a second time through its default route
+                # (eth0 -> node). The result is a packet loop with the node (every reply
+                # duplicated ~30x until the TTL expires) that breaks TCP/iperf3. The kernel
+                # must not route in this pod: VPP does.
+                sysctl -w net.ipv4.ip_forward=0 >/dev/null 2>&1 || echo 0 > /proc/sys/net/ipv4/ip_forward
+                # Runs detached and hammers the route back every 0.2s for a minute: a single
+                # wait-then-add attempt lost the race against oai-upf-vpp's own NRF
+                # registration often enough (the interface rename can land just before it),
+                # so we shrink the gap instead of trying to time it exactly.
+                ( GW=$(echo "$POD_IP" | cut -d. -f1-3).1
+                  i=0
+                  while [ $i -lt 50 ]; do
+                    ip route add default via "$GW" dev n4-1 2>/dev/null
+                    i=$((i+1))
+                    sleep 0.2
+                  done
+
+                  # oai-upf-vpp's AF_PACKET interfaces come up with a freshly-generated MAC
+                  # address instead of inheriting the underlying veth's real one. VPP then
+                  # silently drops every inbound frame addressed to that real MAC as an
+                  # "l3 mac mismatch" - this is what was actually breaking both the NRF
+                  # registration and the SMF's PFCP association, not routing. Pin each
+                  # AF_PACKET interface's MAC to match its real kernel interface.
+                  VPPCTL=/openair-upf/bin/vppctl
+                  for pair in n4-1:host-n4-1 n3-2:host-n3-2 n6-3:host-n6-3; do
+                    KIF=${pair%%:*}
+                    VIF=${pair##*:}
+                    j=0
+                    while [ $j -lt 50 ]; do
+                      KMAC=$(cat /sys/class/net/$KIF/address 2>/dev/null)
+                      if [ -n "$KMAC" ] && $VPPCTL set interface mac address $VIF $KMAC 2>/dev/null; then
+                        break
+                      fi
+                      j=$((j+1))
+                      sleep 0.2
+                    done
+                  done
+
+                  # oai-upf-vpp's own NRF registration is a single, non-retried attempt made
+                  # very early while the AF_PACKET/MAC setup above is still settling, so it
+                  # reliably fails - nothing in the image retries it afterwards. Register
+                  # ourselves instead, a few seconds later, reusing the exact profile file
+                  # the image already generated (a different NF-instance UUID is fine, but
+                  # the same one is kept for all the tries so that a lost answer never
+                  # creates a second profile). When the node is busy (many pods starting
+                  # together) the interface rename of the image can land after the loops
+                  # above: the default route and the MACs are therefore asserted again
+                  # before every try (both are idempotent), for up to about 5 minutes.
+                  NEWUUID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || echo "$(date +%s)-$$")
+                  MAXTRY=90
+                  [ "$REGISTER_NRF" = "yes" ] || MAXTRY=10
+                  sleep 3
+                  attempt=1
+                  while [ $attempt -le $MAXTRY ]; do
+                    ip route add default via "$GW" dev n4-1 2>/dev/null
+                    for pair in n4-1:host-n4-1 n3-2:host-n3-2 n6-3:host-n6-3; do
+                      KMAC=$(cat /sys/class/net/${pair%%:*}/address 2>/dev/null)
+                      [ -n "$KMAC" ] && $VPPCTL set interface mac address ${pair##*:} $KMAC 2>/dev/null
+                    done
+                    if [ "$REGISTER_NRF" = "yes" ] && [ -f /openair-upf/etc/upf_profile.json ] && [ -n "$NRF_IP_ADDR" ]; then
+                      CODE=$(curl --max-time 5 --http2-prior-knowledge --write-out "%{http_code}" --silent --output /dev/null \
+                        -X PUT "http://${NRF_IP_ADDR}:${NRF_PORT}/nnrf-nfm/v1/nf-instances/${NEWUUID}" \
+                        -d @/openair-upf/etc/upf_profile.json -H "Content-Type: application/json" -H "Expect:")
+                      case "$CODE" in
+                        200|201) break ;;
+                      esac
+                    fi
+                    attempt=$((attempt+1))
+                    sleep 3
+                  done
+                ) >/dev/null 2>&1 </dev/null &
+                exit 0
+        # oai-upf-vpp is configured entirely through environment variables (no config.yaml
+        # is mounted/read by this image, unlike the simpleswitch oai-upf it replaces).
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: NAME
+          value: {{ .Values.vpp.name | quote }}
+        - name: MCC
+          value: {{ .Values.vpp.mcc | quote }}
+        - name: MNC
+          value: {{ .Values.vpp.mnc | quote }}
+        - name: REALM
+          value: {{ .Values.vpp.realm | quote }}
+        - name: VPP_MAIN_CORE
+          value: {{ .Values.vpp.mainCore | quote }}
+        - name: VPP_CORE_WORKER
+          value: {{ .Values.vpp.coreWorker | quote }}
+        - name: VPP_PLUGIN_PATH
+          value: {{ .Values.vpp.pluginPath | quote }}
+        - name: SNSSAI_SST
+          value: {{ .Values.vpp.snssai.sst | quote }}
+        - name: SNSSAI_SD
+          value: {{ .Values.vpp.snssai.sd | quote }}
+        - name: DNN
+          value: {{ .Values.vpp.dnn | quote }}
+        - name: REGISTER_NRF
+          value: {{ .Values.vpp.registerNrf | quote }}
+        - name: NRF_IP_ADDR
+          value: {{ .Values.vpp.nrf.host | quote }}
+        - name: NRF_PORT
+          value: {{ .Values.vpp.nrf.port | quote }}
+        - name: HTTP_VERSION
+          value: {{ .Values.vpp.nrf.httpVersion | quote }}
+        # IF_1 = N4 (PFCP to the SMF + SBI registration to the NRF) -> stays on the pod's
+        # default eth0 (cluster network), IP resolved at runtime via the downward API since
+        # a k8s pod IP isn't known ahead of time the way a docker-compose static IP is.
+        - name: IF_1_IP
+          value: "$(POD_IP)"
+        - name: IF_1_TYPE
+          value: "N4"
+        # IF_2 = N3 (GTP-U to the gNB) -> dedicated Multus interface "n3"
+        - name: IF_2_IP
+          value: {{ .Values.multus.n3Interface.ipAdd | quote }}
+        - name: IF_2_TYPE
+          value: "N3"
+        - name: IF_2_NWI
+          value: {{ .Values.vpp.n3.nwi | quote }}
+        - name: IF_2_DNAI
+          value: {{ .Values.vpp.n3.dnai | quote }}
+        # IF_3 = N6 (towards the Data Network) -> dedicated Multus interface "n6"
+        - name: IF_3_IP
+          value: {{ .Values.multus.n6Interface.ipAdd | quote }}
+        - name: IF_3_TYPE
+          value: "N6"
+        {{- if .Values.vpp.n6.remoteIp }}
+        - name: IF_3_IP_REMOTE
+          value: {{ .Values.vpp.n6.remoteIp | quote }}
+        {{- end }}
+        - name: IF_3_NWI
+          value: {{ .Values.vpp.n6.nwi | quote }}
+        - name: IF_3_DNAI
+          value: {{ .Values.vpp.n6.dnai | quote }}
         {{- if .Values.readinessProbe}}
         readinessProbe:
           exec:
             command:
             - /bin/bash
-            - /openair-upf/bin/healthcheck.sh
-          initialDelaySeconds: 2
-          periodSeconds: 3
+            - -c
+            - pgrep vpp
+          initialDelaySeconds: 5
+          periodSeconds: 5
         {{- end}}
         {{- if .Values.livenessProbe}}
         livenessProbe:
           exec:
             command:
             - /bin/bash
-            - /openair-upf/bin/healthcheck.sh
-          initialDelaySeconds: 10
-          periodSeconds: 5
+            - -c
+            - pgrep vpp
+          initialDelaySeconds: 15
+          periodSeconds: 10
         {{- end}}
         ports:
         - containerPort: 8805
           name: pfcp
         - containerPort: 2152
           name: s1u
-        {{- if .Values.start.spgwu}}
-        {{- else}}
-        command:
-          - /bin/sleep
-          - infinity
-        {{- end}}
         {{- if .Values.resources.define}}
         resources:
           requests:
             memory: {{ .Values.resources.requests.nf.memory | quote }}
             cpu: {{ .Values.resources.requests.nf.cpu | quote }}
+          {{- if .Values.resources.limits.define}}
           limits:
             memory: {{ .Values.resources.limits.nf.memory | quote }}
             cpu: {{ .Values.resources.limits.nf.cpu | quote }}
+          {{- end}}
         {{- end}}
+      {{- if and .Values.includeTcpDumpContainer .Values.persistent.sharedvolume }}
       volumes:
-      - configMap:
-      {{- if .Values.global }}
-          name: {{ .Chart.Name }}-configmap
-      {{- else }}
-          name: {{ .Chart.Name }}-configmap
-      {{- end }}
-        name: configuration
-      {{- if .Values.includeTcpDumpContainer}}
-      {{- if .Values.persistent.sharedvolume}}
       - name: cn5g-pvc
         persistentVolumeClaim:
           claimName: cn5g-pvc
-      {{- end }}
       {{- end }}
       dnsPolicy: ClusterFirst
       restartPolicy: Always

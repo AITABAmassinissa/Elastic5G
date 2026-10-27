@@ -3,8 +3,8 @@ kubernetesDistribution: Vanilla  #Vanilla for community kubernetes distribution 
 ## In case of using these charts on Openshift then please use UBI images
 ## To know more about them follow this tutorial https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed/-/tree/master/openshift
 nfimage:
-  repository: docker.io/library/oai-upf # dockerhub oaisoftwarealliance/oai-upf
-  version: v2.1.0          #image tag, v2.1.0tag for experimental features
+  repository: docker.io/library/oai-upf-vpp # UPF-VPP image built locally (see README)
+  version: v2.2.1          #image tag
   # pullPolicy: IfNotPresent or Never or Always
   pullPolicy: Never
 
@@ -35,20 +35,27 @@ exposedPorts:
 # Interface mapping is strictly based on your networking environment 
 ## Change these ip-addresses according to your environment 
 
+staticClusterIP: "10.110.99.104" # fixed: the SMF resolves this UPF-VPP's FQDN through a hostAliases entry pointing here
+
 multus:
   ## If you don't want to add a default route in your pod then leave this field empty
   defaultGateway: ""
-  n3Interface: # use this interface if using one interface for all 3GPP interfaces
-    create: false
-    ipAdd: "172.21.12.95"
-    netmask: "22"
+  # oai-upf-vpp takes over its interfaces directly (VPP/AF_PACKET), unlike the simpleswitch
+  # oai-upf it replaces, so N3 and N6 each NEED their own dedicated interface -> Multus is
+  # mandatory for those two, it is not just an option here.
+  n3Interface: # N3 (GTP-U to the gNB)
+    create: true
+    ipAdd: "10.100.3.104" # inside the br-n3 bridge subnet (10.100.3.0/24) provisioned on the node by the host-net-setup DaemonSet
+    netmask: "24"
     name: "n3"
     ## If you do not have a gateway leave the field empty
     gateway: ""
     ## If you do not want to add any routes in your pod then leave this field empty
-    routes: [{'dst': '10.8.0.0/24','gw': '172.21.15.254'}, {'dst': '10.9.0.0/24','gw': '172.21.15.254'}]
-    hostInterface: "bond0"
+    routes: ""
+    hostInterface: "br-n3" # pre-existing Linux bridge on the k8s node (created on every node by 5g_core host-net-setup DaemonSet, see oai-5g-core/host-net-setup)
   n4Interface:
+    # N4 (PFCP to the SMF) and the SBI registration to the NRF stay on the pod's default eth0
+    # (cluster network) instead, reusing $(POD_IP) at runtime - see templates/deployment.yaml.
     create: false
     ipAdd: "192.168.24.2"
     netmask: "24"
@@ -58,20 +65,51 @@ multus:
     ## If you do not want to add any routes in your pod then leave this field empty
     routes: ""
     hostInterface: "bond0"
-  n6Interface:
-    create: false
-    ipAdd: "192.168.22.2"
+  n6Interface: # N6 (towards the Data Network)
+    create: true
+    ipAdd: "10.100.6.104" # inside the br-n6 bridge subnet (10.100.6.0/24) provisioned on the node by the host-net-setup DaemonSet
     name: "n6"
     netmask: "24"
     ## If you do not have a gateway leave the field empty
     gateway: ""
     ## If you do not want to add any routes in your pod then leave this field empty
     routes: ""
-    hostInterface: "bond0"
+    hostInterface: "br-n6" # pre-existing Linux bridge on the k8s node (created on every node by 5g_core host-net-setup DaemonSet, see oai-5g-core/host-net-setup)
+
+## oai-upf-vpp specific configuration. This image is configured purely through environment
+## variables (see templates/deployment.yaml) - it does NOT read a config.yaml, unlike the
+## simpleswitch oai-upf it replaces, so the configmap/config.yaml used to exist here has
+## been removed.
+vpp:
+  name: "VPP-UPF-SLICE4"
+  mcc: "001"
+  mnc: "01"
+  realm: "3gppnetwork.org"
+  mainCore: "0"
+  coreWorker: "1"
+  # Ubuntu 22.04/24.04-based image path shown below; use /usr/lib64/vpp_plugins/ for RHEL/UBI images
+  pluginPath: "/usr/lib/x86_64-linux-gnu/vpp_plugins/"
+  snssai:
+    sst: "2"
+    sd: "000002" # SD of slice 4 (S-NSSAI SST 2 / SD 000002); SNSSAI_SD is mandatory for oai-upf-vpp
+  dnn: "oaid"
+  registerNrf: "yes"
+  nrf:
+    host: "oai-nrf" # Kubernetes service name of the NRF used by this slice
+    port: "80"
+    httpVersion: "2"
+  n3:
+    nwi: "access.oai.org"
+    dnai: "access"
+  n6:
+    nwi: "internet.oai.org"
+    dnai: "internet"
+    # Optional: static IP of the DN / traffic-generator pod if it is also attached to the
+    # same Multus n6 network. Leave empty to skip setting IF_3_IP_REMOTE.
+    remoteIp: ""
 
 ## Debugging section
 start:
-  spgwu: true #If false the network function container will run in sleep mode for manually testing
   tcpdump: false
 
 includeTcpDumpContainer: false #If true it will add a tcpdump container inside network function pod for debugging
@@ -96,27 +134,33 @@ persistent:
 resources:
   define: true
   limits:
-    define: false
+    # oai-upf-vpp needs real headroom: it pre-allocates large buffer pools at startup
+    # (128Mi -> OOMKilled almost immediately) and busy-polls its worker core, so it
+    # constantly shows ~100% CPU even at idle - this is expected VPP behaviour, not a bug.
+    define: true
     nf:
-      cpu: 100m
-      memory: 128Mi
+      cpu: "1"
+      memory: 1Gi
     #If tcpdump container is disabled this value will not be used
     tcpdump:
       cpu: 100m
       memory: 128Mi
   requests:
     nf:
-      cpu: 100m
-      memory: 128Mi
+      cpu: 500m
+      memory: 512Mi
     #If tcpdump container is disabled this value will not be used
     tcpdump:
       cpu: 100m
       memory: 128Mi
 
+# oai-upf-vpp constantly runs its worker core near 100% (busy-poll dataplane), and this
+# chart's Multus interfaces use a single STATIC IP per replica (no IP pool) - so CPU-based
+# autoscaling would either never scale down or create replicas with clashing IPs. Disabled.
 autoscaling:
-  enabled: true
+  enabled: false
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 1
   targetCPUUtilizationPercentage: 70
 
 readinessProbe: true
@@ -125,10 +169,9 @@ livenessProbe: false
 
 terminationGracePeriodSeconds: 5
 
-nodeSelector: {}
-#schedulerName: setpodnet-scheduler
+nodeSelector:
+  elastic5g.io/radio-plane: "true"  # gNB and all UPF-VPP must sit on the same node (L2 adjacency on br-n3 / br-n6): kubectl label node <X> elastic5g.io/radio-plane=true
 #id: "1" 
 #app_ad: "2" #Slice differentiator
 #nb_pods: "50"
-
 nodeName:

@@ -69,10 +69,20 @@ amf:
 interfaces:
   n2:
     dev: eth0
+  # UPF-VPP needs N3 on its own dedicated interface (br-n3), separate from the cluster
+  # network - the gNB must be attached to that same segment to actually reach it for GTP-U,
+  # which is what multus.n3Interface below does.
   n3:
-    dev: eth0
+    dev: n3
   radio:
     dev: eth0
+multus:
+  n3Interface:
+    create: true
+    ipAdd: "10.100.3.200" # one shared IP: this single gNB reaches all UPF-VPP slices on the
+                           # same br-n3 L2 segment (10.100.3.101 ... 10.100.3.104)
+    netmask: "24"
+    hostInterface: "br-n3" # Linux bridge created on every node by oai-5g-core/host-net-setup/daemonset.yaml
 mcc: '001'
 mnc: '01'
 sst: 1 #for UE 
@@ -92,7 +102,9 @@ containerSecurityContext:
 podLabels: {}
 podAnnotations: {}
 affinity: {}
-nodeSelector: {}
+nodeSelector:
+  elastic5g.io/radio-plane: "true"  # any node carrying this label (kubectl label node <X> elastic5g.io/radio-plane=true):
+                                     # the gNB must be L2-adjacent to the UPF-VPP pods on the same br-n3 bridge
 tolerations: []
 
 ues:

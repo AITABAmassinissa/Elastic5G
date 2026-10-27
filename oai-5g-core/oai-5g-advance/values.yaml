@@ -18,7 +18,7 @@ oai-nrf:
   enabled: true
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-nrf          ## The image will be pulled from dockerhub
-    version: v2.1.0                          ## The branch to be used to pull from dockerhub
+    version: v2.2.1                          ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod
@@ -31,7 +31,7 @@ oai-nssf:
   enabled: true
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-nssf          ## The image will be pulled from dockerhub
-    version: v2.1.0                                   ## The branch to be used to pull from dockerhub
+    version: v2.2.1                                   ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   #imagePullSecrets:
@@ -44,7 +44,7 @@ oai-udr:
   enabled: true
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-udr           ## The image will be pulled from dockerhub
-    version: v2.1.0                                    ## The branch to be used to pull from dockerhub
+    version: v2.2.1                                    ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod
@@ -57,7 +57,7 @@ oai-lmf:
   enabled: true
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-lmf          ## The image will be pulled from dockerhub
-    version: v2.1.0                          ## The branch to be used to pull from dockerhub
+    version: v2.2.1                          ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod
@@ -70,7 +70,7 @@ oai-udm:
   enabled: true
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-udm           ## The image will be pulled from dockerhub
-    version: v2.1.0                                    ## The branch to be used to pull from dockerhub
+    version: v2.2.1                                    ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod
@@ -83,7 +83,7 @@ oai-ausf:
   enabled: true
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-ausf           ## The image will be pulled from dockerhub
-    version: v2.1.0                                    ## The branch to be used to pull from dockerhub
+    version: v2.2.1                                    ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod
@@ -96,7 +96,7 @@ oai-amf:
   enabled: true
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-amf           ## The image will be pulled from dockerhub
-    version: v2.1.0                                    ## The branch to be used to pull from dockerhub
+    version: v2.2.1                                    ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod
@@ -118,31 +118,34 @@ oai-amf:
   nodeSelector: {}
 oai-upf:
   enabled: true
+  staticClusterIP: "10.110.99.101" # SMF resolves this UPF-VPP's FQDN via a hostAliases entry pointing here
   nfimage:  # image name either locally present or in a public/private repository
-    repository: docker.io/library/oai-upf    ## The image will be pulled from dockerhub
-    version: v2.1.0                                    ## The branch to be used to pull from dockerhub
+    repository: docker.io/library/oai-upf-vpp  ## UPF-VPP image built locally (see README)
+    version: v2.2.1                                        ## image tag
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod
   #imagePullSecrets:
    # - name: "regcred"
-  # create an extra interface for N3 incase the gNB is outside the cluster network or there is a need to have dedicated interface for N3
+  # UPF-VPP takes over its interfaces directly (VPP/AF_PACKET) instead of routing via the
+  # kernel like the simpleswitch UPF it replaces, so N3 and N6 each NEED their own dedicated
+  # interface here - Multus is mandatory for those two, it's not just an option anymore.
   ## Change these ip-addresses according to your environment
-  ## N4, N6 are optional only if you want that UPF uses different subnets for different 3gpp interfaces. 
   multus:
     ## If you don't want to add a default route in your pod then replace this field with ""
     defaultGateway: ""
-    n3Interface:
-      create: false
-      ipAdd: "172.21.8.95"
-      netmask: "22"
+    n3Interface: # N3 (GTP-U to the gNB)
+      create: true
+      ipAdd: "10.100.3.101" # inside the br-n3 bridge subnet (10.100.3.0/24) created by the host-net-setup DaemonSet
+      netmask: "24"
       name: "n3"
       ## If you do not have a gateway leave the field empty
       gateway: ""
       ## If you don't want to add a default route in your pod then replace this field with ""
-      routes: [{'dst': '10.8.0.0/24','gw': '172.21.11.254'}, {'dst': '10.9.0.0/24','gw': '172.21.11.254'}]
-      hostInterface: "bond0"
-    ## For n4 it is better to re-use eth0 interface inside the pod (primary CNI of Kubernetes)
+      routes: ""
+      hostInterface: "br-n3"
+    ## N4 (PFCP to the SMF) and the SBI registration to the NRF stay on the pod's default eth0
+    ## (cluster network) instead, reusing $(POD_IP) at runtime - no Multus needed here.
     n4Interface:
       create: false
       ipAdd: "192.168.24.2"
@@ -153,18 +156,45 @@ oai-upf:
       ## If you do not want to add any routes in your pod then leave this field empty
       routes: ""
       hostInterface: "bond0"
-    n6Interface:
-      create: false
-      ipAdd: "192.168.22.2"
+    n6Interface: # N6 (towards the Data Network)
+      create: true
+      ipAdd: "10.100.6.101" # inside the br-n6 bridge subnet (10.100.6.0/24) created by the host-net-setup DaemonSet
       name: "n6"
       netmask: "24"
       ## If you do not have a gateway leave the field empty
       gateway: ""
       ## If you do not want to add any routes in your pod then leave this field empty
       routes: ""
-      hostInterface: "bond0"
-  #NOTE: If the interface you selected for n6If is wrong then traffic will not be routed towards internet
-  nodeSelector: {}
+      hostInterface: "br-n6"
+  ## UPF-VPP specific configuration (env-var driven, no config.yaml is used by this image).
+  ## These match the subchart's own defaults in oai-5g-core/oai-upf/values.yaml - repeated
+  ## here so they're visible/overridable from this top-level umbrella values.yaml too.
+  vpp:
+    name: "VPP-UPF-SLICE1"
+    mcc: "001"
+    mnc: "01"
+    realm: "3gppnetwork.org"
+    mainCore: "0"
+    coreWorker: "1"
+    pluginPath: "/usr/lib/x86_64-linux-gnu/vpp_plugins/"  # RHEL/UBI images: /usr/lib64/vpp_plugins/
+    snssai:
+      sst: "1"
+      sd: "ffffff" # 3GPP "no SD" sentinel value (TS 23.003) - SNSSAI_SD is mandatory for UPF-VPP
+    dnn: "oai"
+    registerNrf: "yes"
+    nrf:
+      host: "oai-nrf"
+      port: "80"
+      httpVersion: "2"
+    n3:
+      nwi: "access.oai.org"
+      dnai: "access"
+    n6:
+      nwi: "internet.oai.org"
+      dnai: "internet"
+      remoteIp: ""
+  nodeSelector:
+    elastic5g.io/radio-plane: "true"  # any node carrying this label (kubectl label node <X> elastic5g.io/radio-plane=true); gNB and UPF-VPP must share it
 
 oai-traffic-server:
   enabled: true
@@ -196,9 +226,19 @@ oai-traffic-server:
   nodeName: ""
 oai-smf:
   enabled: true
+  upfHostAlias: # resolves the made-up FQDN UPF-VPP (oai-upf-vpp) registers at the NRF with
+    ip: "10.110.99.101"
+    fqdn: "vpp-upf-slice1.node.5gcn.mnc01.mcc001.3gppnetwork.org"
+    extra: # FQDNs of the other slices' UPF-VPP, see oai-5g-core/oai-smf/values.yaml
+      - ip: "10.110.99.102"
+        fqdn: "vpp-upf-slice2.node.5gcn.mnc01.mcc001.3gppnetwork.org"
+      - ip: "10.110.99.103"
+        fqdn: "vpp-upf-slice3.node.5gcn.mnc01.mcc001.3gppnetwork.org"
+      - ip: "10.110.99.104"
+        fqdn: "vpp-upf-slice4.node.5gcn.mnc01.mcc001.3gppnetwork.org"
   nfimage:  # image name either locally present or in a public/private repository
     repository: docker.io/library/oai-smf           ## The image will be pulled from dockerhub
-    version: v2.1.0                         ## The branch to be used to pull from dockerhub
+    version: v2.2.1                         ## The branch to be used to pull from dockerhub
     # pullPolicy: IfNotPresent or Never or Always
     pullPolicy: Never
   includeTcpDumpContainer: false #only for taking pcaps inside network function pod

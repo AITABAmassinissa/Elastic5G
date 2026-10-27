@@ -158,6 +158,21 @@ spec:
           claimName: cn5g-pvc
       {{- end }}
       {{- end }}
+      {{- if .Values.upfHostAlias.ip }}
+      # UPF-VPP (oai-upf-vpp) registers itself at the NRF under a made-up FQDN (NAME/MCC/MNC/REALM
+      # based) that no DNS server has ever heard of - the SMF's PFCP node-ID resolution
+      # fails without this, exactly like the "extra_hosts" entry the docker-compose
+      # reference adds on its own smf service for the same reason.
+      hostAliases:
+      - ip: {{ .Values.upfHostAlias.ip | quote }}
+        hostnames:
+        - {{ .Values.upfHostAlias.fqdn | quote }}
+      {{- range .Values.upfHostAlias.extra }}
+      - ip: {{ .ip | quote }}
+        hostnames:
+        - {{ .fqdn | quote }}
+      {{- end }}
+      {{- end }}
       dnsPolicy: ClusterFirst
       restartPolicy: Always
       serviceAccountName: {{ .Chart.Name }}

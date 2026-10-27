@@ -4,7 +4,7 @@ kubernetesDistribution: Vanilla  #Vanilla for community kubernetes distribution 
 ## To know more about them follow this tutorial https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed/-/tree/master/openshift
 nfimage:  # image name either locally present or in a public/private repository
   repository: docker.io/library/oai-amf           ## The image will be pulled from dockerhub
-  version: v2.1.0                                 #image tag, v2.1.0tag for experimental features 
+  version: v2.2.1                                 #image tag, v2.1.0tag for experimental features 
   # pullPolicy: IfNotPresent or Never or Always
   pullPolicy: Never
 

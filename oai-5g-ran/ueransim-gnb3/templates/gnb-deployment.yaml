@@ -17,8 +17,18 @@ spec:
       app.kubernetes.io/component: gnb
   template:
     metadata:
-      {{- if .Values.podAnnotations }}
-      annotations: {{- include "common.tplvalues.render" (dict "value" .Values.podAnnotations "context" $) | nindent 8 }}
+      {{- if or .Values.podAnnotations .Values.multus.n3Interface.create }}
+      annotations:
+        {{- if .Values.podAnnotations }}
+        {{- include "common.tplvalues.render" (dict "value" .Values.podAnnotations "context" $) | nindent 8 }}
+        {{- end }}
+        {{- if .Values.multus.n3Interface.create }}
+        k8s.v1.cni.cncf.io/networks: |
+          [{
+            "name": "{{ include "common.names.fullname" . }}-n3",
+            "interface": "n3"
+          }]
+        {{- end }}
       {{- end }}
       labels: {{- include "common.labels.standard" . | nindent 8 }}
         app.kubernetes.io/component: gnb

@@ -4,13 +4,27 @@ kubernetesDistribution: Vanilla  #Vanilla for community kubernetes distribution 
 ## To know more about them follow this tutorial https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed/-/tree/master/openshift
 nfimage:
   repository: docker.io/library/oai-smf  #docker.io/oaisoftwarealliance/oai-smf          # dockerhub oaisoftwarealliance/oai-smf
-  version: v2.1.0 #image tag, v2.1.0tag for experimental features 
+  version: v2.2.1 #image tag, v2.1.0tag for experimental features 
   #pullPolicy: IfNotPresent or Never or Always
   pullPolicy: Never
 
 # good to use when pulling images from docker-hub mention for RHEL images it can be commented
 # imagePullSecrets: 
 #   - name: "regcred"
+
+upfHostAlias: # resolves the made-up FQDN UPF-VPP (oai-upf-vpp) registers at the NRF with
+  ip: "10.110.99.104"
+  fqdn: "vpp-upf-slice4.node.5gcn.mnc01.mcc001.3gppnetwork.org"
+  # The SMFs of slices 1, 2 and 4 share the NRF `oai-nrf`, so the NRF notifies each SMF of every UPF-VPP.
+  # An SMF that cannot resolve a UPF-VPP FQDN retries forever and never associates with its own UPF:
+  # the FQDNs of the other slices' UPF-VPP are therefore resolved too (the UPF selection then filters on S-NSSAI/DNN).
+  extra:
+    - ip: "10.110.99.101"
+      fqdn: "vpp-upf-slice1.node.5gcn.mnc01.mcc001.3gppnetwork.org"
+    - ip: "10.110.99.102"
+      fqdn: "vpp-upf-slice2.node.5gcn.mnc01.mcc001.3gppnetwork.org"
+    - ip: "10.110.99.103"
+      fqdn: "vpp-upf-slice3.node.5gcn.mnc01.mcc001.3gppnetwork.org"
 
 serviceAccount:
   # Specifies whether a service account should be created

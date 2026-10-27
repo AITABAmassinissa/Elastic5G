@@ -50,6 +50,7 @@ For lightweight environments, a **k3s**-based variant can also be used.
 - [eMBB Video Traffic Validation](#embb-video-traffic-validation-enhanced-mobile-broadband)
 - [Network Slicing](#network-slicing)
 - [Resource and Energy Monitoring with Prometheus, Kepler and Grafana](#resource-and-energy-monitoring-with-prometheus-kepler-and-grafana)
+- [License and citation](#license-and-citation)
 
 # Build a K8S cluster
 We assume that a Kubernetes cluster is already running using this repository: https://github.com/AIDY-F2N/k8s-cluster-setup-ubuntu24.git
@@ -76,6 +77,10 @@ git clone https://github.com/k8snetworkplumbingwg/multus-cni.git
     ```bash[language=bash]
     kubectl apply -f multus-cni/deployments/multus-daemonset-thick.yml
     ```
+  - Raise the resources of the Multus daemon. The manifest gives it 50 Mi of memory; when about twenty pods are created at once (`helm install 5gc` followed by the NWDAF) it is `OOMKilled`, then crash-loops, and every pod that needs a Multus interface stays in `ContainerCreating` for minutes (`failed to setup network for sandbox ... plugin type="multus"`):
+    ```bash[language=bash]
+    kubectl -n kube-system patch ds kube-multus-ds --type=json -p '[{"op":"replace","path":"/spec/template/spec/containers/0/resources","value":{"requests":{"cpu":"100m","memory":"100Mi"},"limits":{"cpu":"1","memory":"1Gi"}}}]'
+    ```
 4. Create oai5g namespace using the below command: 
     ```bash[language=bash]
     kubectl create ns oai5g
@@ -84,7 +89,7 @@ git clone https://github.com/k8snetworkplumbingwg/multus-cni.git
 5. Clone or download this repository
 
 6. Install Metrics Server:
-To enable auto-scaling features like HPA (Horizontal Pod Autoscaler), deploy the Kubernetes metrics server:
+To enable auto-scaling features like HPA (Horizontal Pod Autoscaler), deploy the Kubernetes metrics server (note: the autoscaling of the UPF is disabled with UPF-VPP, see [docs/CHANGES-upf-vpp.md](docs/CHANGES-upf-vpp.md)):
 ```bash[language=bash]
 kubectl apply -f metricserver.yaml
 ```
@@ -93,16 +98,16 @@ kubectl apply -f metricserver.yaml
 
 ## Building OAI 5G Core Images
 
-In this repository, we use **OpenAirInterface CN5G release `v2.1.0`** as the reference version for building the 5G Core Network Functions.
+In this repository, we use **OpenAirInterface CN5G release `v2.2.1`** as the reference version for building the 5G Core Network Functions.
 
 ### 1. Clone the repository
 
 ```bash
-git clone --branch v2.1.0 https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed.git
+git clone --branch v2.2.1 https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed.git
 cd oai-cn5g-fed
 git submodule sync --recursive
 git submodule update --init --recursive
-./scripts/syncComponents.sh --branch v2.1.0
+./scripts/syncComponents.sh --branch v2.2.1
 ````
 
 ### 2. Increase swap memory
@@ -121,7 +126,7 @@ Build each network function image as follows:
 #### NRF
 
 ```bash
-docker build --target oai-nrf --tag oai-nrf:v2.1.0 \
+docker build --target oai-nrf --tag oai-nrf:v2.2.1 \
   --file oai-cn5g-fed/component/oai-nrf/docker/Dockerfile.nrf.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-nrf
@@ -130,7 +135,7 @@ docker build --target oai-nrf --tag oai-nrf:v2.1.0 \
 #### NSSF
 
 ```bash
-docker build --target oai-nssf --tag oai-nssf:v2.1.0 \
+docker build --target oai-nssf --tag oai-nssf:v2.2.1 \
   --file oai-cn5g-fed/component/oai-nssf/docker/Dockerfile.nssf.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-nssf
@@ -139,7 +144,7 @@ docker build --target oai-nssf --tag oai-nssf:v2.1.0 \
 #### LMF
 
 ```bash
-docker build --target oai-lmf --tag oai-lmf:v2.1.0 \
+docker build --target oai-lmf --tag oai-lmf:v2.2.1 \
   --file oai-cn5g-fed/component/oai-lmf/docker/Dockerfile.lmf.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-lmf
@@ -148,7 +153,7 @@ docker build --target oai-lmf --tag oai-lmf:v2.1.0 \
 #### UDR
 
 ```bash
-docker build --target oai-udr --tag oai-udr:v2.1.0 \
+docker build --target oai-udr --tag oai-udr:v2.2.1 \
   --file oai-cn5g-fed/component/oai-udr/docker/Dockerfile.udr.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-udr
@@ -157,7 +162,7 @@ docker build --target oai-udr --tag oai-udr:v2.1.0 \
 #### UDM
 
 ```bash
-docker build --target oai-udm --tag oai-udm:v2.1.0 \
+docker build --target oai-udm --tag oai-udm:v2.2.1 \
   --file oai-cn5g-fed/component/oai-udm/docker/Dockerfile.udm.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-udm
@@ -166,7 +171,7 @@ docker build --target oai-udm --tag oai-udm:v2.1.0 \
 #### AUSF
 
 ```bash
-docker build --target oai-ausf --tag oai-ausf:v2.1.0 \
+docker build --target oai-ausf --tag oai-ausf:v2.2.1 \
   --file oai-cn5g-fed/component/oai-ausf/docker/Dockerfile.ausf.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-ausf
@@ -175,25 +180,31 @@ docker build --target oai-ausf --tag oai-ausf:v2.1.0 \
 #### AMF
 
 ```bash
-docker build --target oai-amf --tag oai-amf:v2.1.0 \
+docker build --target oai-amf --tag oai-amf:v2.2.1 \
   --file oai-cn5g-fed/component/oai-amf/docker/Dockerfile.amf.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-amf
 ```
 
-#### UPF
+#### UPF-VPP
+
+The user plane function is **UPF-VPP** (`oai-upf-vpp`, the VPP-based OAI UPF). It is built from the `oai-cn5g-fed/component/oai-upf-vpp` component like the other network functions (VPP is compiled from source, this is the longest build of the list):
 
 ```bash
-docker build --target oai-upf --tag oai-upf:v2.1.0 \
-  --file oai-cn5g-fed/component/oai-upf/docker/Dockerfile.upf.ubuntu \
-  --build-arg BASE_IMAGE=ubuntu:jammy \
-  oai-cn5g-fed/component/oai-upf
+docker build --target oai-upf-vpp --tag oai-upf-vpp:v2.2.1 \
+  --file oai-cn5g-fed/component/oai-upf-vpp/docker/Dockerfile.upf-vpp.ubuntu \
+  --build-arg BASE_IMAGE=ubuntu:focal \
+  oai-cn5g-fed/component/oai-upf-vpp
 ```
+
+> Unlike the other network functions, UPF-VPP is built on `ubuntu:focal` (20.04): the VPP `stable/2101` sources it compiles need the `dh-systemd` package, which no longer exists on `ubuntu:jammy` (the build stops with `E: Unable to locate package dh-systemd`).
+
+> UPF-VPP is configured only through environment variables (`vpp:` block of each UPF-VPP chart `values.yaml`) and needs a dedicated Multus interface for N3 and for N6. See [docs/CHANGES-upf-vpp.md](docs/CHANGES-upf-vpp.md) for the details and the host prerequisites.
 
 #### SMF
 
 ```bash
-docker build --target oai-smf --tag oai-smf:v2.1.0 \
+docker build --target oai-smf --tag oai-smf:v2.2.1 \
   --file oai-cn5g-fed/component/oai-smf/docker/Dockerfile.smf.ubuntu \
   --build-arg BASE_IMAGE=ubuntu:jammy \
   oai-cn5g-fed/component/oai-smf
@@ -223,33 +234,52 @@ kubectl get node <node-name> -o jsonpath='{.status.nodeInfo.containerRuntimeVers
 Then load each image into `containerd`:
 
 ```bash
-docker save oai-nrf:v2.1.0 -o /tmp/oai-nrf.tar
+docker save oai-nrf:v2.2.1 -o /tmp/oai-nrf.tar
 sudo ctr -n k8s.io images import /tmp/oai-nrf.tar
 
-docker save oai-nssf:v2.1.0 -o /tmp/oai-nssf.tar
+docker save oai-nssf:v2.2.1 -o /tmp/oai-nssf.tar
 sudo ctr -n k8s.io images import /tmp/oai-nssf.tar
 
-docker save oai-lmf:v2.1.0 -o /tmp/oai-lmf.tar
+docker save oai-lmf:v2.2.1 -o /tmp/oai-lmf.tar
 sudo ctr -n k8s.io images import /tmp/oai-lmf.tar
 
-docker save oai-udr:v2.1.0 -o /tmp/oai-udr.tar
+docker save oai-udr:v2.2.1 -o /tmp/oai-udr.tar
 sudo ctr -n k8s.io images import /tmp/oai-udr.tar
 
-docker save oai-udm:v2.1.0 -o /tmp/oai-udm.tar
+docker save oai-udm:v2.2.1 -o /tmp/oai-udm.tar
 sudo ctr -n k8s.io images import /tmp/oai-udm.tar
 
-docker save oai-ausf:v2.1.0 -o /tmp/oai-ausf.tar
+docker save oai-ausf:v2.2.1 -o /tmp/oai-ausf.tar
 sudo ctr -n k8s.io images import /tmp/oai-ausf.tar
 
-docker save oai-amf:v2.1.0 -o /tmp/oai-amf.tar
+docker save oai-amf:v2.2.1 -o /tmp/oai-amf.tar
 sudo ctr -n k8s.io images import /tmp/oai-amf.tar
 
-docker save oai-upf:v2.1.0 -o /tmp/oai-upf.tar
-sudo ctr -n k8s.io images import /tmp/oai-upf.tar
+docker save oai-upf-vpp:v2.2.1 -o /tmp/oai-upf-vpp.tar
+sudo ctr -n k8s.io images import /tmp/oai-upf-vpp.tar
 
-docker save oai-smf:v2.1.0 -o /tmp/oai-smf.tar
+docker save oai-smf:v2.2.1 -o /tmp/oai-smf.tar
 sudo ctr -n k8s.io images import /tmp/oai-smf.tar
 ```
+
+## UPF-VPP host prerequisites
+
+UPF-VPP does not route through the kernel IP stack: it takes over its N3 and N6 interfaces directly. Each UPF-VPP pod is therefore attached, through Multus, to two Linux bridges of the node (`br-n3` for GTP-U towards the gNB, `br-n6` towards the data network), and the UERANSIM gNB is attached to `br-n3` as well.
+
+1. Create the bridges, the N6 gateway, the return routes towards the UE pools (`12.1.1.0/24` ... `12.1.4.0/24`) and the NAT on **every node**, once per cluster (it re-applies itself after a reboot):
+
+```bash
+kubectl apply -f oai-5g-core/host-net-setup/daemonset.yaml
+kubectl get pods -n host-net-setup -o wide   # one Running pod per node
+```
+
+2. The gNB and all UPF-VPP pods must run on the **same node** (L2 adjacency on `br-n3` / `br-n6`). Label that node:
+
+```bash
+kubectl label node <node-name> elastic5g.io/radio-plane=true
+```
+
+Without this label the UPF-VPP and gNB pods stay `Pending` (they do not start silently on the wrong node).
 
 ## Deployment
 
@@ -374,6 +404,16 @@ kubectl get pods -n oai5g
 <div align="center">
     <img src="fig/nwdaf.png" alt="nwdaf">
 </div>
+
+## Validate NWDAF
+
+Once the core, a gNB and at least one UE are running, check that NWDAF receives the AMF and SMF events and answers its APIs:
+
+```bash
+NWDAF/scripts/check-nwdaf.sh
+```
+
+The script checks the pods, the MongoDB collections per slice, the engine API and the 3GPP analytics API through the gateway. The detailed procedure (per-slice queries, engine and gateway API calls, troubleshooting) is in [NWDAF slicing validation](docs/NWDAF-slicing-validation.md).
 
 
 
@@ -516,7 +556,7 @@ The experiment validates:
 
 * Sustained high-throughput delivery
 * QoS enforcement via rate limitation
-* UPF traffic monitoring using Grafana
+* UPF-VPP traffic monitoring using Grafana
 
 ---
 
@@ -572,7 +612,7 @@ oaitun_ue1
 
 This guarantees that all video traffic:
 
-* Traverses the UPF
+* Traverses the UPF-VPP
 * Is visible in Grafana monitoring
 * Is subject to slice QoS policies
 
@@ -621,7 +661,7 @@ http://$(kubectl get pod video-server -n oai5g -o jsonpath='{.status.podIP}')/mo
 ### Observations
 
 * **UE Side:** Stable throughput around the configured limit.
-* **Grafana:** Clear increase in UPF traffic.
+* **Grafana:** Clear increase in UPF-VPP traffic.
 
 <div align="center">
     <img src="fig/eMBB_grafana.png" alt="eMBB_grafana">
@@ -658,8 +698,8 @@ http://$(kubectl get pod video-server -n oai5g -o jsonpath='{.status.podIP}')/mo
 
 ### Observations
 
-* **UE Download Speed:** maximum throughput depends on the current RAN, UPF, and host resources.
-* **Grafana:** significant traffic spike should be observed on the UPF.
+* **UE Download Speed:** maximum throughput depends on the current RAN, UPF-VPP, and host resources.
+* **Grafana:** significant traffic spike should be observed on the UPF-VPP.
 
 <div align="center">
     <img src="fig/eMBB_grafana2.png" alt="eMBB_grafana2">
@@ -670,7 +710,9 @@ http://$(kubectl get pod video-server -n oai5g -o jsonpath='{.status.podIP}')/mo
 The objective of this part is to attach multiple network slices to the same 5G core network.
 
 In this architecture, the main core network is deployed once and shared by all slices.  
-Then, additional slices can be added progressively by deploying slice-specific components such as dedicated SMF and UPF instances.
+Then, additional slices can be added progressively by deploying slice-specific components such as dedicated SMF and UPF-VPP instances.
+
+> **DNN naming (important).** With OAI CN5G `v2.2.x` the SMF re-parses the plain-text DNN sent by the AMF as if it were a length-prefixed label list (`dotted_to_string`): any character below `0x40` (digits, `.`, `-`) is read as a label length and cuts the name. A DNN such as `oai2` therefore arrives as `oai` and the PDU session is rejected with `MISSING_OR_UNKNOWN_DNN`. The DNNs of this repository are consequently **letters only**: `oai` (slice 1), `oaib` (slice 2), `oaic` (slice 3) and `oaid` (slice 4). Keep this rule if you add slices, and use the same names in the subscriber database (`oai-5g-core/mysql/initialization/oai_db-basic.sql`), the SMF `config.yaml`, the UPF-VPP `vpp.dnn` value and the UE `apn`.
 
 The slicing configuration is described in:
 
@@ -727,6 +769,16 @@ Username: admin
 Password: admin
 ````
 
+## UPF-VPP traffic per slice
+
+cAdvisor refreshes the network counters of a pod only every 10-30 s, which is too coarse to see a flow cross the UPF-VPP. The DaemonSet [`monitoring/upf-vpp-exporter.yaml`](monitoring/upf-vpp-exporter.yaml) exports the byte counters of the N3, N4 and N6 interfaces of every UPF-VPP pod, labelled by slice (`upf="VPP-UPF-SLICE<N>"`), and Prometheus scrapes it every 2 s:
+
+```bash
+kubectl apply -f monitoring/upf-vpp-exporter.yaml
+```
+
+Downlink of a slice: `rate(upf_vpp_interface_transmit_bytes_total{interface="n3-2"}[10s])*8/1e6` (Mbit/s); uplink: the same with `upf_vpp_interface_receive_bytes_total`. Plot them in Grafana with one series per `upf` label, next to the AMBR of each slice, to compare a slice with its QoS profile.
+
 ## Dashboards
 
 In Grafana, go to **Dashboards** to access the available cluster, node, and pod monitoring dashboards.
@@ -765,3 +817,34 @@ Use the **Pod** filter at the top of the dashboard to focus on a specific worklo
     <img src="fig/kepler.png" alt="Kepler dashboard">
 </div>
 ```
+
+
+# License and citation
+
+## License
+
+Elastic5G builds on [OpenAirInterface (OAI)](https://openairinterface.org/) software (OAI 5G Core, OAI RAN and OAI NWDAF components). The OAI code is distributed under the **OAI Collaborative Standards Software License v1.0 (CSSL v1.0)**, available at:
+
+**<https://openairinterface.org/oai-cssl/>**
+
+Some files of this repository still carry the previous *OAI Public License v1.1* header, which now points to the same page. **Anyone who uses, modifies or redistributes this repository must respect the OAI license terms.** The other components used here (UERANSIM, VPP, MySQL, MongoDB, Kong, Prometheus, Grafana, Kepler, ...) keep their own licenses.
+
+## Citation
+
+If you use Elastic5G in your work, we would be grateful if you cite our paper, accepted at **CNSM 2026**:
+
+> M. Ait Aba, A. Y. Brahmi, N.-E.-H. Yellas and B. Jouaber, "Elastic5G: A Rebuildable Kubernetes Testbed for Dynamic Network Slicing and NWDAF-Enabled Analytics for 5G Core Research," in *Proc. 22nd International Conference on Network and Service Management (CNSM)*, Alcalá de Henares, Spain, Oct. 26-30, 2026. Code: <https://github.com/AITABAmassinissa/Elastic5G>
+
+```bibtex
+@inproceedings{aitaba2026elastic5g,
+  author    = {Ait Aba, Massinissa and Brahmi, Abdenour Yasser and Yellas, Nour-El-Houda and Jouaber, Badii},
+  title     = {{Elastic5G}: A Rebuildable {Kubernetes} Testbed for Dynamic Network Slicing and {NWDAF}-Enabled Analytics for {5G} Core Research},
+  booktitle = {Proc. 22nd International Conference on Network and Service Management (CNSM)},
+  address   = {Alcal{\'a} de Henares, Spain},
+  month     = oct,
+  year      = {2026},
+  note      = {Code: \url{https://github.com/AITABAmassinissa/Elastic5G}}
+}
+```
+
+GitHub also offers a *Cite this repository* button, generated from [`CITATION.cff`](CITATION.cff).

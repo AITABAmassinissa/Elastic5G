@@ -1,0 +1,137 @@
+# Prometheus exporter for the UPF-VPP pods (N3 / N6 / N4 interface counters, per slice).
+#
+# cAdvisor only refreshes the network counters of a pod every 10-30 s, which is too coarse to
+# watch a video stream cross the UPF. UPF-VPP takes over its interfaces, but the kernel still
+# keeps the byte counters of n3-*, n6-* and n4-* in the pod network namespace. This DaemonSet
+# (hostPID + privileged, like the host-net-setup DaemonSet) reads /proc/<vpp pid>/net/dev of
+# every UPF-VPP process, labels the series with the slice name (the NAME env var of the UPF-VPP
+# pod, e.g. VPP-UPF-SLICE3) and exposes them on :9105/metrics.
+#
+#   kubectl apply -f monitoring/upf-vpp-exporter.yaml
+#
+# Metrics: upf_vpp_interface_receive_bytes_total / upf_vpp_interface_transmit_bytes_total
+#          {upf="VPP-UPF-SLICE<N>", interface="n3-2|n6-3|n4-1"}
+# Downlink of a slice = transmit bytes of n3-2; uplink = receive bytes of n3-2.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: upf-vpp-exporter-script
+  namespace: monitoring
+data:
+  exporter.py: |
+    import os
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    def collect():
+        out = ["# TYPE upf_vpp_interface_receive_bytes_total counter",
+               "# TYPE upf_vpp_interface_transmit_bytes_total counter"]
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                if not open(f"/proc/{pid}/comm").read().startswith("vpp"):
+                    continue
+                env = open(f"/proc/{pid}/environ", "rb").read().split(b"\0")
+                names = [e.split(b"=", 1)[1].decode() for e in env if e.startswith(b"NAME=")]
+                if not names:
+                    continue
+                for line in open(f"/proc/{pid}/net/dev").read().splitlines()[2:]:
+                    iface, rest = line.split(":", 1)
+                    iface, v = iface.strip(), rest.split()
+                    if iface.split("-")[0] in ("n3", "n4", "n6"):
+                        lab = f'upf="{names[0]}",interface="{iface}"'
+                        out.append(f"upf_vpp_interface_receive_bytes_total{{{lab}}} {v[0]}")
+                        out.append(f"upf_vpp_interface_transmit_bytes_total{{{lab}}} {v[8]}")
+            except (OSError, IndexError):
+                continue
+        return "\n".join(out) + "\n"
+
+    class H(BaseHTTPRequestHandler):
+        def do_GET(self):
+            body = collect().encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4")
+            self.end_headers()
+            self.wfile.write(body)
+        def log_message(self, *a):
+            pass
+
+    HTTPServer(("0.0.0.0", 9105), H).serve_forever()
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: upf-vpp-exporter
+  namespace: monitoring
+  labels:
+    app: upf-vpp-exporter
+spec:
+  selector:
+    matchLabels:
+      app: upf-vpp-exporter
+  template:
+    metadata:
+      labels:
+        app: upf-vpp-exporter
+    spec:
+      hostPID: true
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: exporter
+          image: python:3.12-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "/script/exporter.py"]
+          securityContext:
+            privileged: true
+          ports:
+            - containerPort: 9105
+              name: metrics
+          volumeMounts:
+            - name: script
+              mountPath: /script
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: script
+          configMap:
+            name: upf-vpp-exporter-script
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: upf-vpp-exporter
+  namespace: monitoring
+  labels:
+    app: upf-vpp-exporter
+spec:
+  clusterIP: None
+  selector:
+    app: upf-vpp-exporter
+  ports:
+    - name: metrics
+      port: 9105
+      targetPort: 9105
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: upf-vpp-exporter
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - monitoring
+  selector:
+    matchLabels:
+      app: upf-vpp-exporter
+  endpoints:
+    - port: metrics
+      interval: 2s

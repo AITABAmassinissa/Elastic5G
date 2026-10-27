@@ -92,6 +92,8 @@ amf:
       nssai:
         - sst: 1
         - sst: 2
+        - sst: 2
+          sd: 000002
         - sst: 3
         - sst: 4
   supported_integrity_algorithms:

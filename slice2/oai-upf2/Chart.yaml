@@ -20,7 +20,7 @@
 ################################################################################
 apiVersion: v2
 name: oai-upf2
-description: A Helm chart for UPF as network function
+description: A Helm chart for UPF-VPP (oai-upf-vpp) as network function
 
 type: application
 
@@ -28,11 +28,13 @@ icon: http://www.openairinterface.org/wp-content/uploads/2015/06/cropped-oai_fin
 
 version: v2.1.0
 
-appVersion: v2.1.0
+appVersion: v2.2.1
 
 keywords:
   - 5G
   - UPF
+  - UPF-VPP
+  - VPP
 
 sources:
   - https://gitlab.eurecom.fr/oai/cn5g/oai-cn5g-fed

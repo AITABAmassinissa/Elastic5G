@@ -82,11 +82,18 @@ nfs:
 snssais:
   - &slice4
     sst: 2
+    sd: 000002 # in hex: distinguishes slice 4 from slice 2 (both SST 2)
 
 nrf:
   nrf_name: "OAI-NRF"
 
 smf:
+  # UPF-VPP (oai-upf-vpp) registers a made-up FQDN and does not create its own F-TEID: without this the
+  # SMF hands the gNB the FQDN's ClusterIP as GTP-U address instead of the UPF's N3 interface.
+  upfs:
+    - host: vpp-upf-slice4.node.5gcn.mnc01.mcc001.3gppnetwork.org
+      config:
+        n3_local_ipv4: "10.100.3.104"
   support_features:
     use_local_subscription_info: yes # Use infos from local_subscription_info or from UDM
     use_local_pcc_rules: yes # Use infos from local_pcc_rules or from PCF
@@ -99,11 +106,11 @@ smf:
     sNssaiSmfInfoList:
       - sNssai: *slice4
         dnnSmfInfoList:
-          - dnn: "oai4"
+          - dnn: "oaid"
 
   local_subscription_infos:
     - single_nssai: *slice4
-      dnn: "oai4"
+      dnn: "oaid"
       qos_profile:
         5qi: 9                    # 5QI value, allowed range: 1-254
         priority: 50               # QoS priority level, allowed range: 1-127; lower value means higher priority
@@ -120,11 +127,11 @@ upf:
     sNssaiUpfInfoList:
       - sNssai: *slice4
         dnnUpfInfoList:
-          - dnn: "oai4"
+          - dnn: "oaid"
 
 ## DNN configuration
 dnns:
-  - dnn: "oai4"
+  - dnn: "oaid"
     pdu_session_type: "IPV4"
     ipv4_subnet: "12.1.4.0/24"
 

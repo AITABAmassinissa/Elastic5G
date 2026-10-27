@@ -174,9 +174,9 @@ ps aux | grep smf
 
 
 
-# oai-upf
+# oai-upf (UPF-VPP)
 
-The `oai-upf` pod runs the User Plane Function (UPF), responsible for packet forwarding, GTP-U tunnel handling, and data plane connectivity between the UE and external data networks.
+The `oai-upf` pod runs **UPF-VPP** (`oai-upf-vpp`, the VPP-based User Plane Function), responsible for packet forwarding, GTP-U tunnel handling, and data plane connectivity between the UE and external data networks. Slices 2 to 4 use the same image in the `oai-upf2`, `oai-upf3` and `oai-upf4` deployments.
 
 This section provides useful operational and debugging commands.
 
@@ -192,28 +192,44 @@ Follow logs in real time:
 kubectl logs -f -n oai5g deploy/oai-upf
 ```
 
-### Debug PFCP Session Creation
-
-```bash
-kubectl logs -n oai5g deploy/oai-upf | grep -i pfcp
-```
 ### Open a Shell Inside the Pod
 
 ```bash
 kubectl exec -it -n oai5g deploy/oai-upf -- bash
 ```
 
-### Verify UPF Process is Running
+### Verify the VPP Process is Running
 
-From inside the pod:
+The readiness probe of UPF-VPP is `pgrep vpp`. From inside the pod:
 
 ```bash
-ps aux | grep upf
+pgrep -a vpp
 ```
 
+### Check the Interfaces and the PFCP Association
 
+UPF-VPP is driven with `vppctl` (replace `oai-upf` by `oai-upf2`, `oai-upf3` or `oai-upf4` for the other slices):
 
+```bash
+kubectl exec -n oai5g deploy/oai-upf -- /openair-upf/bin/vppctl show interface addr
+kubectl exec -n oai5g deploy/oai-upf -- /openair-upf/bin/vppctl show upf association
+```
 
+### Debug PFCP Session Creation
+
+```bash
+kubectl exec -n oai5g deploy/oai-upf -- /openair-upf/bin/vppctl show upf session
+kubectl logs -n oai5g deploy/oai-smf | grep -i pfcp
+```
+
+A healthy session shows a `Local F-TEID` whose IPv4 is the N3 address of the UPF-VPP (`10.100.3.101` for slice 1, `10.100.3.102` for slice 2, ...), not a ClusterIP.
+
+### Check the N3 and N6 Multus Interfaces
+
+```bash
+kubectl exec -n oai5g deploy/oai-upf -- ip -br addr
+kubectl get net-attach-def -n oai5g
+```
 
 ## oai-nrf
 

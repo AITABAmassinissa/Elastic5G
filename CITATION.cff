@@ -1,0 +1,44 @@
+cff-version: 1.2.0
+message: "If you use Elastic5G, please cite it as below. Please also respect the OpenAirInterface license (https://openairinterface.org/oai-cssl/)."
+title: "Elastic5G: A Rebuildable Kubernetes Testbed for Dynamic Network Slicing and NWDAF-Enabled Analytics for 5G Core Research"
+type: software
+authors:
+  - family-names: "Ait Aba"
+    given-names: "Massinissa"
+    affiliation: "SAMOVAR, Télécom SudParis, Institut Polytechnique de Paris"
+  - family-names: "Brahmi"
+    given-names: "Abdenour Yasser"
+    affiliation: "LIGM CNRS-UMR 8049, University Gustave Eiffel"
+  - family-names: "Yellas"
+    given-names: "Nour-El-Houda"
+    affiliation: "SAMOVAR, Télécom SudParis, Institut Polytechnique de Paris"
+  - family-names: "Jouaber"
+    given-names: "Badii"
+    affiliation: "SAMOVAR, Télécom SudParis, Institut Polytechnique de Paris"
+repository-code: "https://github.com/AITABAmassinissa/Elastic5G"
+keywords:
+  - 5G
+  - network slicing
+  - Kubernetes
+  - NWDAF
+  - OpenAirInterface
+preferred-citation:
+  type: conference-paper
+  title: "Elastic5G: A Rebuildable Kubernetes Testbed for Dynamic Network Slicing and NWDAF-Enabled Analytics for 5G Core Research"
+  authors:
+    - family-names: "Ait Aba"
+      given-names: "Massinissa"
+    - family-names: "Brahmi"
+      given-names: "Abdenour Yasser"
+    - family-names: "Yellas"
+      given-names: "Nour-El-Houda"
+    - family-names: "Jouaber"
+      given-names: "Badii"
+  collection-title: "Proc. 22nd International Conference on Network and Service Management (CNSM)"
+  conference:
+    name: "22nd International Conference on Network and Service Management (CNSM)"
+    city: "Alcalá de Henares"
+    country: "ES"
+    date-start: "2026-10-26"
+    date-end: "2026-10-30"
+  year: 2026

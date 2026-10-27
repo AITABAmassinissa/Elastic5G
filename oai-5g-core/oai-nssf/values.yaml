@@ -2,7 +2,7 @@ kubernetesDistribution: Vanilla  # Vanilla (Community Kubernetes) or Openshift (
 
 nfimage:
   repository: docker.io/library/oai-nssf # image name either locally present or in a public/private repository
-  version: v2.1.0  #image tag, v2.1.0tag for experimental features 
+  version: v2.2.1  #image tag, v2.1.0tag for experimental features 
   #pullPolicy: IfNotPresent or Never or Always
   pullPolicy: Never
 

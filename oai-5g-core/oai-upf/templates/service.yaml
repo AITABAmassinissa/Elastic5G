@@ -9,6 +9,13 @@ spec:
   {{- if .Values.global }}{{ if not .Values.global.clusterIpServiceIpAllocation }}
   clusterIP: None
   {{- end }}{{ end }}
+  {{- if .Values.staticClusterIP }}
+  # Fixed on purpose: the SMF resolves this UPF via a hostAliases entry (see the oai-smf*
+  # chart) pointing at this exact IP, standing in for oai-upf-vpp's made-up FQDN which no
+  # DNS server actually knows about. A dynamically-assigned ClusterIP would make that
+  # mapping go stale on every recreation of this Service.
+  clusterIP: {{ .Values.staticClusterIP }}
+  {{- end }}
   ports:
     - name: pfcp
       port: {{ .Values.exposedPorts.n4 }}

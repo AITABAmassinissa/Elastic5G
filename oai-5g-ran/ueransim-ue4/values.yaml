@@ -76,7 +76,7 @@ sst: 2
 #sd: "0x02"
 apnList:
   - type: 'IPv4'
-    apn: 'oai2'
+    apn: 'oaib'
     slice:
       sst: 2
       #sd: "0x02"

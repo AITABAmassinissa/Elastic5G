@@ -44,12 +44,16 @@ sessions:
 # Configured NSSAI for this UE by HPLMN
 configured-nssai:
   - sst: {{ .Values.sst }}
-    #sd: {{ .Values.sd }}
+    {{- with .Values.sd }}
+    sd: {{ . }}
+    {{- end }}
 
 # Default Configured NSSAI for this UE
 default-nssai:
   - sst: {{ .Values.sst }}
-    #sd: {{ .Values.sd }}
+    {{- with .Values.sd }}
+    sd: {{ . }}
+    {{- end }}
 
 # Supported encryption algorithms by this UE
 integrity:
